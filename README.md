@@ -1,7 +1,7 @@
 # saleslab_codes
 Collection of codes to process and analyze iMotions datasets.
 
-Main function is "SalesLab_ratareader.py" which reads and processes raw iMotions export datafiles. It will print preview images and separated datafiles for each modality it find in the data.
+Main function is "SalesLab_datareader.py" which reads and processes raw iMotions export datafiles (containing all datasources). It will create preview images and separated datafiles for each modality in the data.
 
 Requirements:
 
@@ -17,18 +17,17 @@ Requirements:
 
 -wxPython (only if using GUI option)
 
--iMotions software to collect data :)
 
 Installation:
 
-Probably easiest to install the latest Miniconda (docs.conda.io/en/latest/miniconda.html) and requires modules. Then unpack the codes into some folder and run the code (see the following).
+Probably easiest to install the latest Miniconda (docs.conda.io/en/latest/miniconda.html) and requires modules by hand (i.e., pip install XXX). Then unpack the codes into some folder and run the code (see the following).
 
 
 There are two ways to use SalesLab_ratareader.py:
 
-(1) Command line with input by calling "python SalesLab_ratareader.py c:\mypath\my_raw_input_file.txt", where you give a raw data file
+(1) Command line with input by calling "python SalesLab_datareader.py <path_tp_your_file>", where you give a raw data file as input (full path).
 
-(2) Via GUI by calling script without any inputs, i.e., "python SalesLab_ratareader.py", then you can drag and drop the file to process
+(2) Using GUI by running the script without any inputs, i.e., "python SalesLab_datareader.py". Then you can simply drag and drop files you want to process.
 
 
 What happens during analysis:
@@ -45,5 +44,8 @@ What happens during analysis:
 
 Note: We assume certain hard-coded properties in the data, such as column and event naming. If these change at some point, e.g., by iMotions software update, the pipeline might fail and needs updating.
 
+There is sample data "raw_exported_data_sample.txt" that you can test.
+
+
 Janne Kauttonen
-3.10.2019 (initial release)
+3.10.2019

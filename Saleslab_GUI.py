@@ -5,6 +5,7 @@ from threading import Thread
 from wx.lib.pubsub import pub
 import Saleslab_settings
 
+# required global parameters
 global inputfile_list
 global is_running
 

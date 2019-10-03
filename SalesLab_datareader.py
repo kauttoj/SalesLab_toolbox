@@ -9,10 +9,9 @@ import Saleslab_GUI
 from scipy import signal
 import Saleslab_settings
 
-# GLOBAL PARAMETERS ###############################################
-INPUT_FILE = None
+# GLOBAL PARAMETERS #######################################
+INPUT_FILE = None # file to process
 PROFILE = False  # enable profiling, useful in debugging
-
 ###########################################################
 
 # helper function to get column names
