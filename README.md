@@ -5,7 +5,7 @@ Main function is "SalesLab_ratareader.py" which reads and processes raw iMotions
 
 Requirements:
 
--Python 3.6+
+-Python 3.7+
 
 -Numpy
 
@@ -30,17 +30,20 @@ There are two ways to use SalesLab_ratareader.py:
 
 (2) Via GUI by calling script without any inputs, i.e., "python SalesLab_ratareader.py", then you can drag and drop the file to process
 
+
 What happens during analysis:
 
 (1) Check that raw data fullfills the expected format and contains relevant information (GSR, eyetracking, heartrate and/or Affdex)
 
-(2) Splitting raw data according to their data sources and removing temporally overlapped events (median value).
+(2) Splitting raw data according to their data sources and removing temporally overlapped events (by taking median).
 
 (3) Removal of bad data-points and doing additional computations (e.g., deconvolution of GSR signal)
 
 (4) Printing results as tab-separated text files and preview plots for each data source. If there are (manual) annotations, they are automatically included for all sources as extra data.
 
+(5) Preprocessing of GSR signal into phasic (fast) and tonic (slow) components using Ledalab continuous decomposition algorithm.
+
 Note: We assume certain hard-coded properties in the data, such as column and event naming. If these change at some point, e.g., by iMotions software update, the pipeline might fail and needs updating.
 
 Janne Kauttonen
-29.8.2019
+3.10.2019 (initial release)
