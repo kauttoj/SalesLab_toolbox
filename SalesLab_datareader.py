@@ -10,34 +10,8 @@ from scipy import signal
 import Saleslab_settings
 
 # GLOBAL PARAMETERS ###############################################
-SCREEN_SIZE = {'w':1980,'h':1080} # presentation screen size in pixels
-GSR_MINIMUM_RATE = 10 # smallest allowed sampling rate [Hz] for GRS signal deconvolution (at least 5Hz required)
 INPUT_FILE = None
-PROFILE = False # enable profiling, useful in debugging
-USE_SUBFOLDER = True # put results into subfolders
-VERSION = '10.9.2019'
-BANDPASS_FILTER = {'low':0.001,'high':10.0,'order':2} # lower and upper thresholds in Hz, order of filter as integer 1-5
-
-# Define data of interest. These are expected to be present in the raw exported textfile.
-# Note: Column names must match those by iMotions, may change with future updates
-DATA_TO_EXTRACT = {'GSR':{'SOURCE':'shimmer','COLUMNS':['Siemens']}, # only one for GSR, passed for deconvolution
-                    'HEART':{'SOURCE':'shimmer','COLUMNS':['Beats/min']},
-                    'ANNOTATION': {'SOURCE':'','COLUMNS':['PostMarker','Annotation']}, # annotation is special: HAs no specific events, column can be one of the two (not both!)
-                    'EYE':{'SOURCE':'et','COLUMNS':['FixationX','FixationY','FixationSeq']},
-                    'FACE':{'SOURCE':'affraw','COLUMNS':[
-    'Number of faces', # this is an integer as 0,1,2...
-    'Valence', # between -100 and 100
-    'Smile', # this and all remaining should be already between 0-100
-    'Attention',
-    'Engagement',
-    'Smirk',
-    'Anger',
-    'Sadness',
-    'Disgust',
-    'Joy',
-    'Surprise',
-    'Fear',
-    'Contempt']}}
+PROFILE = False  # enable profiling, useful in debugging
 
 ###########################################################
 
@@ -131,13 +105,13 @@ def process_gsr_signal(t,y):
 
     assert np.count_nonzero(yy < 0) == 0, "Negative GSR values found after interpolation!"
 
-    yy_filtered = butter_bandpass_filter(yy-np.mean(yy),BANDPASS_FILTER['low'],BANDPASS_FILTER['high'],original_rate,order=BANDPASS_FILTER['order'])
+    yy_filtered = butter_bandpass_filter(yy-np.mean(yy),Saleslab_settings.BANDPASS_FILTER['low'],Saleslab_settings.BANDPASS_FILTER['high'],original_rate,order=Saleslab_settings.BANDPASS_FILTER['order'])
 
     #assert 5<sampling_rate<1000,"sampling rate of GSR was %i, does not make sense!" % sampling_rate
     N_points = 2950 # ledalab max points is 3000, try that first
     N_opt = 3 # number of optimization runs, between 0 and 4
     dt = (t[-1]-t[0])/N_points
-    new_rate = int(np.maximum(GSR_MINIMUM_RATE,int(1.0/dt)))
+    new_rate = int(np.maximum(Saleslab_settings.GSR_MINIMUM_RATE,int(1.0/dt)))
     dt = 1.0 / new_rate
     tt = np.arange(t[0],t[-1],dt)
     N_points = len(tt)
@@ -164,7 +138,7 @@ def process_gsr_signal(t,y):
 def plot_eye_data(t,fix_id,fix_x,fix_y,fname):
     from pygazeanalyser.gazeplotter import draw_fixations, draw_heatmap, draw_scanpath
 
-    DISPSIZE = (int(SCREEN_SIZE['w']),int(SCREEN_SIZE['h']))
+    DISPSIZE = (int(Saleslab_settings.SCREEN_SIZE['w']),int(Saleslab_settings.SCREEN_SIZE['h']))
 
     # load image name, saccades, and fixations
     #imgname = data[trialnr][header.index("image")]
@@ -336,7 +310,7 @@ def process_file(DATA_TO_EXTRACT):
     INPUT_FILE_ROOT += os.sep
 
     RESULT_FOLDER = INPUT_FILE_ROOT
-    if USE_SUBFOLDER:
+    if Saleslab_settings.USE_SUBFOLDER: # collect results into new subfolders (recommended)
         RESULT_FOLDER = INPUT_FILE_ROOT + file_name[:-4] + "_datareader_output" + os.sep
         os.makedirs(RESULT_FOLDER,exist_ok=True)
     assert os.path.isdir(RESULT_FOLDER),"Output directory '%s' does not exist!" % RESULT_FOLDER
@@ -675,11 +649,11 @@ if __name__ == "__main__":
     __spec__ = "ModuleSpec(name='builtins', loader=<class '_frozen_importlib.BuiltinImporter'>)"
 
     Saleslab_settings.init()
-    Saleslab_settings.process_file=lambda:process_file(DATA_TO_EXTRACT)
+    Saleslab_settings.process_file=lambda:process_file(Saleslab_settings.DATA_TO_EXTRACT)
     Saleslab_settings.myprint=myprint
     hasGUI = 0
 
-    print('---- SalesLab raw data reader (%s, Janne Kauttonen) ----\nInfo: This script reads raw iMotions data, checks data validity and\nmakes preview images + cleaned datafiles for each modality it finds.\n' % VERSION)
+    print('---- SalesLab raw data reader (%s, Janne Kauttonen) ----\nInfo: This script reads raw iMotions data, checks data validity and\nmakes preview images + cleaned datafiles for each modality it finds.\n' % Saleslab_settings.VERSION)
     if len(sys.argv)>1:
         print('Total %i arguments given' % (len(sys.argv)-1))
         INPUT_FILE = str(sys.argv[1])
@@ -692,5 +666,5 @@ if __name__ == "__main__":
     else:
         # we have file, process it and exit
         Saleslab_settings.INPUT_FILE = INPUT_FILE
-        process_file(DATA_TO_EXTRACT)
+        process_file(Saleslab_settings.DATA_TO_EXTRACT)
 
