@@ -1,4 +1,7 @@
 # SalesLab_toolbox
+
+NOTE: Current version was written for iMotions version 7.2, does not work with 8.0+!
+
 Collection of codes to process and analyze iMotions datasets.
 
 Main function is "SalesLab_datareader.py" which reads and processes raw iMotions export datafiles (containing all datasources). It will create preview images and separated datafiles for each modality in the data.
