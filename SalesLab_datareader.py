@@ -14,6 +14,39 @@ INPUT_FILE = None # file to process
 PROFILE = False  # enable profiling, useful in debugging
 ###########################################################
 
+def read_ver8_data(INPUT_FILE):
+    DEVICE_row = detect_header_rows(INPUT_FILE, separator=',', identifier='#Device')
+    CATEGORY_row = detect_header_rows(INPUT_FILE, separator=',', identifier='#Category')
+    DATA_row = detect_header_rows(INPUT_FILE, separator=',', identifier='#DATA')+1
+
+    def isvalid(arr):
+        assert not(any(["|".find(x)>-1 for x in arr])),'Data contains illegal pipe-character!'
+        return arr
+
+    with open(INPUT_FILE,'r',encoding='utf-8') as f:
+        line = f.readline()
+        i=0
+        while line:
+            i+=1
+            s = line.strip().split(',')
+            if i == DEVICE_row:
+                DEVICES = isvalid(s[1:])
+            if i == CATEGORY_row:
+                CATEGORIES = isvalid(s[1:])
+            if i == DATA_row:
+                COLUMNS = isvalid(s[1:])
+                break
+            line = f.readline()
+
+    new_names = ['|'.join(x) for x in list(zip(DEVICES,CATEGORIES,COLUMNS))]
+
+    new_names = [x.replace('Affdex Facial Expression','Data') for x in new_names]
+    new_names = [x.replace('Affdex Emotion','Data') for x in new_names]
+
+    table = pandas.read_csv(INPUT_FILE, sep=',', header=0, skiprows=DATA_row-1,low_memory=False,encoding='utf-8',index_col=False,names=new_names,usecols=range(1,len(new_names)+1))
+
+    return table
+
 # helper function to get column names
 def find_column_name(cols,targets,extra_target=None):
     ind = []
@@ -56,15 +89,17 @@ def monotonic(x):
     dx = dx[~np.isnan(dx)]
     return np.all(dx <= 0) or np.all(dx >= 0)
 
-# helper function to detect how many null header liner there are
-def detect_header_rows(file):
+# helper function to detect how many null header lines there are OR find specific lines
+def detect_header_rows(file,separator='\t',identifier=''):
     with open(file,'r',encoding='utf-8') as f:
         line = f.readline()
         cnt = 1
         cols=-1
         while line:
-            s = line.strip().split('\t')
-            if len(s)>10 and s[0]!='#' and len(s)<=cols:
+            s = line.strip().split(separator)
+            if s[0]==identifier:
+                return cnt
+            if len(s)>0 and len(s)<=cols and s[0][0]!='#':
                 return cnt-2
             cols = len(s)
             line = f.readline()
@@ -294,7 +329,9 @@ def clean_annotations(responses):
     return responses
 
 # function to process single file
-def process_file(DATA_TO_EXTRACT):
+def process_file(DATA_TO_EXTRACT_base):
+
+    DATA_TO_EXTRACT = DATA_TO_EXTRACT_base[Saleslab_settings.iMOTIONS_VERSION]
 
     INPUT_FILE = Saleslab_settings.INPUT_FILE
 
@@ -322,10 +359,17 @@ def process_file(DATA_TO_EXTRACT):
         report_file=None
 
     # read datafile using Pandas
+    skiprows=0
     try:
         myprint('\nReading file %s' % file_name,file=report_file)
-        skiprows = detect_header_rows(INPUT_FILE) # try to detect how many null rows before data
-        table = pandas.read_csv(INPUT_FILE, sep='\t',header=0, skiprows=range(skiprows),low_memory=False,encoding='utf-8',index_col=False)#, usecols=COLUMNS_OF_INTEREST)
+        if Saleslab_settings.iMOTIONS_VERSION==7:
+            skiprows = detect_header_rows(INPUT_FILE) # try to detect how many null rows before data
+            table = pandas.read_csv(INPUT_FILE, sep='\t',header=0, skiprows=range(skiprows),low_memory=False,encoding='utf-8',index_col=False)#, usecols=COLUMNS_OF_INTEREST)
+            if 'EventSource' not in table:
+                myprint('No "EventSource" column found, not a valid dataset! Exiting...', file=report_file)
+                assert False
+        else:
+            table = read_ver8_data(INPUT_FILE)
     except:
         myprint("!! FAILED to parse file, not expected RAW iMotions data format !!",file=report_file)
         raise "FAILED to read file %s into Pandas table!" % INPUT_FILE
@@ -338,10 +382,6 @@ def process_file(DATA_TO_EXTRACT):
     # get event sources
     COLUMNS = list(table.columns)
 
-    if 'EventSource' not in table:
-        myprint('No "EventSource" column found, not a valid dataset! Exiting...',file=report_file)
-        assert False
-
     media_offset = None
     if 'MediaTime' in table:
         X=np.array(table[['Timestamp','MediaTime']])
@@ -353,26 +393,37 @@ def process_file(DATA_TO_EXTRACT):
     elif 'PostMarker' not in table and 'Annotation' in table:
         DATA_TO_EXTRACT['ANNOTATION']['COLUMNS'] = ['Annotation']
     elif 'PostMarker' in table and 'Annotation' in table:
-        data1 = table['Annotation']
-        data2 = table['PostMarker']
+        assert False,"Data contains both PostMarker and Annotation, cannot process both"
 
     # get all valid data sources, could be multiple matching the same SOURCE pattern
     myprint('Parsing event sources',file=report_file)
-    EVENTS = np.array(table['EventSource']) # data event source
-    all_EVENTS = get_events(set(EVENTS)) # separate events, could be multiple in same row!
-    DATA_TO_EXTRACT_new = {}
-    for key, value in DATA_TO_EXTRACT.items():
-        if len(value['SOURCE'])>0: # has specified sources
-            exact_sources = [event for i, event in enumerate(all_EVENTS) if value['SOURCE'] in event.lower()]
-            if len(exact_sources)>0:
-                DATA_TO_EXTRACT_new[key]=[] # collect all into a list
+
+    if Saleslab_settings.iMOTIONS_VERSION==7:
+        EVENTS = np.array(table['EventSource']) # data event source
+        all_EVENTS = get_events(set(EVENTS)) # separate events, could be multiple in same row!
+        DATA_TO_EXTRACT_new = {}
+        for key, value in DATA_TO_EXTRACT.items():
+            if len(value['SOURCE'])>0: # has specified sources
+                exact_sources = [event for i, event in enumerate(all_EVENTS) if value['SOURCE'] in event.lower()]
+                if len(exact_sources)>0:
+                    DATA_TO_EXTRACT_new[key]=[] # collect all into a list
+                    for source in exact_sources:
+                        source = remove_duplicate(source)
+                        DATA_TO_EXTRACT_new[key].append({'SOURCE':source,'COLUMNS':DATA_TO_EXTRACT[key]['COLUMNS']})
+            else: # no specified sources, pass as is
+                DATA_TO_EXTRACT_new[key]=[{'SOURCE': '', 'COLUMNS': DATA_TO_EXTRACT[key]['COLUMNS']}]
+    if Saleslab_settings.iMOTIONS_VERSION==8:
+        all_EVENTS = table.columns
+        DATA_TO_EXTRACT_new = {}
+        for key, value in DATA_TO_EXTRACT.items():
+            exact_sources = np.unique([(event.split('|'))[0] for i, event in enumerate(all_EVENTS) if value['SOURCE'] in event.lower()])
+            if len(exact_sources) > 0:
+                DATA_TO_EXTRACT_new[key] = []  # collect all into a list
                 for source in exact_sources:
-                    source = remove_duplicate(source)
-                    DATA_TO_EXTRACT_new[key].append({'SOURCE':source,'COLUMNS':DATA_TO_EXTRACT[key]['COLUMNS']})
-        else: # no specified sources, pass as is
-            DATA_TO_EXTRACT_new[key]=[{'SOURCE': '', 'COLUMNS': DATA_TO_EXTRACT[key]['COLUMNS']}]
+                    DATA_TO_EXTRACT_new[key].append({'SOURCE': source, 'COLUMNS': [source+'|Data|'+x for x in DATA_TO_EXTRACT[key]['COLUMNS']]})
 
     DATA_TO_EXTRACT = copy.deepcopy(DATA_TO_EXTRACT_new) # create a new local copy
+
     myprint('Parsed OK! Data has %i rows (starting at %i), %i columns and %i unique sources' % (table.shape[0],skiprows+1,table.shape[1],len(DATA_TO_EXTRACT)),file=report_file)
 
     # doing some profiling?
@@ -389,20 +440,17 @@ def process_file(DATA_TO_EXTRACT):
         sub_sources = len(source_list)
         DATA[key]=[]
         for value in source_list:
-            event_rows = [i for i,event in enumerate(EVENTS) if value['SOURCE'] in event]
+            cols = value['COLUMNS']
+            event_rows = list(np.where(~np.isnan(table[cols[0]]))[0])
             if len(event_rows)<10:
                 myprint('less than 10 events, skipping this source')
                 continue
-            extra_target=None
-            if sub_sources>1:
-                extra_target=value['SOURCE']
-            cols = find_column_name(COLUMNS,value['COLUMNS'],extra_target=extra_target)
-            cols.append('Timestamp')
+            cols.append('iMotions|Timestamp|Timestamp')
             if len(cols)>1: # must have at least two columns (always has TimeStamp)
                 partial_table = table.iloc[event_rows]
                 partial_table=partial_table[cols]
                 # convert into dict of dense numpy arrays
-                responses = pandas_to_numpy(partial_table.loc[:,partial_table.columns != 'Timestamp'].to_dense())
+                responses = pandas_to_numpy(partial_table.loc[:,partial_table.columns != 'iMotions|Timestamp|Timestamp'].to_dense())
                 if key=="ANNOTATION":
                     if len(responses)>1:
                         myprint("!! Multiple non-empty annotations columns found, cannot include annotations. Check your data !!")
@@ -411,7 +459,7 @@ def process_file(DATA_TO_EXTRACT):
                         responses = clean_annotations(responses) # remove overlapping annotations
                 # test if all data are nans, omit if yes
                 if not is_full_nan(responses):
-                    d = {'time':np.array(partial_table['Timestamp'].to_dense(),dtype=np.float32),'responses':responses}
+                    d = {'time':np.array(partial_table['iMotions|Timestamp|Timestamp'].to_dense(),dtype=np.float32),'responses':responses}
                     DATA[key].append(d)
                     myprint('...found source %s (%s=#%i), raw data extracted (%i points)' % (key,value['SOURCE'],len(DATA[key]),len(DATA[key][-1]['time'])),file=report_file)
                     n_sources+=1
@@ -563,9 +611,12 @@ def process_file(DATA_TO_EXTRACT):
                 plt.close('all')
                 fig = plt.figure()
                 DPI = float(fig.get_dpi())
-                myprint('...Affdex data coverage %.1f%%' % (
-                        100 * np.sum(DATA[key][key_set]['responses']['Number of faces'] > 0) / len(
-                    DATA[key][key_set]['responses']['Number of faces'])),file=report_file)
+                coverage = np.nan
+                try:
+                    coverage = 100 * np.sum(DATA[key][key_set]['responses']['Number of faces'] > 0) / len(DATA[key][key_set]['responses']['Number of faces'])
+                except:
+                    pass
+                myprint('...Affdex data coverage %.1f%%' % (coverage),file=report_file)
                 fig.set_size_inches(700.0 / DPI, 1080.0 / DPI)
                 for i, resp_key in enumerate(DATA[key][key_set]['responses'].keys()):
                     ax = plt.subplot(len(DATA[key][key_set]['responses']), 1, i + 1)
