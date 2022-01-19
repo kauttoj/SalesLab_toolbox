@@ -12,27 +12,33 @@ def init():
     global iMOTIONS_VERSION
     global BANDPASS_FILTER
     global DATA_TO_EXTRACT
+    global SEPARATOR
+    global GSR_DISCONTINUITY_LIMIT
+    global GSR_MINIMUM_SEGMENT_LIMIT
 
     # program version
-    VERSION = '3.10.2019'
-    iMOTIONS_VERSION = 8
+    VERSION = '19.1.2022'
+    iMOTIONS_VERSION = 9
 
     # GUI related parameters and function handles
     INPUT_FILE=None
     process_file= None
     myprint = None
     updateTextFun = None
+    linestyle = '.'
 
     # parameters related to data-analysis
     SCREEN_SIZE = {'w':1980,'h':1080} # presentation screen size in pixels
     GSR_MINIMUM_RATE = 10 # smallest allowed sampling rate [Hz] for GRS signal deconvolution (at least 5Hz required)
+    GSR_DISCONTINUITY_LIMIT = 3  # [s] if larger, consider as different segment
+    GSR_MINIMUM_SEGMENT_LIMIT = 20 # [s] if smaller, skip analysis
     USE_SUBFOLDER = True # put results into subfolders
-    BANDPASS_FILTER = {'low':0.001,'high':5.0,'order':2} # lower and upper thresholds in Hz, order of filter as integer 1-5
+    BANDPASS_FILTER = {'low':0.01,'high':5.0,'order':2} # lower and upper thresholds in Hz, order of filter as integer 1-5
+    SEPARATOR = ';'
 
     # Define data of interest. These are expected to be present in the raw exported textfile.
     # Note: Column names must match those by iMotions, may change with future updates
     DATA_TO_EXTRACT = dict()
-
     DATA_TO_EXTRACT[7] = {'GSR':{'SOURCE':'shimmer','COLUMNS':['Siemens']}, # only one for GSR, passed for deconvolution
                         'HEART':{'SOURCE':'shimmer','COLUMNS':['Beats/min']},
                         'ANNOTATION': {'SOURCE':'','COLUMNS':['PostMarker','Annotation']}, # annotation is special: HAs no specific events, column can be one of the two (not both!)
@@ -75,6 +81,25 @@ def init():
                         #'ANNOTATION': {'SOURCE':'','COLUMNS':['PostMarker','Annotation']}, # annotation is special: HAs no specific events, column can be one of the two (not both!)
                         #'EYE':{'SOURCE':'','COLUMNS':['FixationX','FixationY','FixationSeq']},
                         'FACE':{'SOURCE':'affectiva affdex','COLUMNS':[
+        #'Number of faces', # this is an integer as 0,1,2...
+        'Valence', # between -100 and 100
+        'Smile', # this and all remaining should be already between 0-100
+        'Attention',
+        'Engagement',
+        'Anger',
+        'Sadness',
+        'Disgust',
+        'Joy',
+        'Surprise',
+        'Fear',
+        'Contempt']}}
+
+    DATA_TO_EXTRACT[9] = {'GSR':{'SOURCE':'Shimmer','CATEGORY':'GSR','COLUMNS':['GSR Conductance CAL']}, # only one for GSR, passed for deconvolution
+                        'HEART':{'SOURCE':'Shimmer','CATEGORY':'Algorithm','COLUMNS':['Heart Rate PPG ALG']},
+                        'STIMULUS':{'SOURCE':'SlideEvents','CATEGORY':'Slideshow','COLUMNS':['SourceStimuliName']},
+                        'ANNOTATION': {'SOURCE':'','CATEGORY':'NONE','COLUMNS':['PostMarker','Annotation']}, # annotation is special: HAs no specific events, column can be one of the two (not both!)
+                        #'EYE':{'SOURCE':'','COLUMNS':['FixationX','FixationY','FixationSeq']},
+                        'FACE':{'SOURCE':'Affectiva AFFDEX','CATEGORY':'Affdex Emotion','COLUMNS':[
         #'Number of faces', # this is an integer as 0,1,2...
         'Valence', # between -100 and 100
         'Smile', # this and all remaining should be already between 0-100

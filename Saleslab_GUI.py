@@ -2,7 +2,8 @@
 import time
 import wx
 from threading import Thread
-from wx.lib.pubsub import pub
+#from wx.lib.pubsub import pub
+from pubsub import pub
 import Saleslab_settings
 
 # required global parameters
