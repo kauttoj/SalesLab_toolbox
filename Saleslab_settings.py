@@ -76,11 +76,11 @@ def init():
     
     note: Sources are lower-cased!
     '''
-    DATA_TO_EXTRACT[8] = {'GSR':{'SOURCE':'(shimmer)','COLUMNS':['GSR Conductance CAL']}, # only one for GSR, passed for deconvolution
-                        'HEART':{'SOURCE':'(shimmer)','COLUMNS':['Heart Rate PPG ALG']},
+    DATA_TO_EXTRACT[8] = {'GSR':{'SOURCE':'(shimmer)','CATEGORY':'','COLUMNS':['GSR Conductance CAL']}, # only one for GSR, passed for deconvolution
+                        'HEART':{'SOURCE':'(shimmer)','CATEGORY':'','COLUMNS':['Heart Rate PPG ALG']},
                         #'ANNOTATION': {'SOURCE':'','COLUMNS':['PostMarker','Annotation']}, # annotation is special: HAs no specific events, column can be one of the two (not both!)
                         #'EYE':{'SOURCE':'','COLUMNS':['FixationX','FixationY','FixationSeq']},
-                        'FACE':{'SOURCE':'affectiva affdex','COLUMNS':[
+                        'FACE':{'SOURCE':'affectiva affdex','CATEGORY':'','COLUMNS':[
         #'Number of faces', # this is an integer as 0,1,2...
         'Valence', # between -100 and 100
         'Smile', # this and all remaining should be already between 0-100
@@ -92,14 +92,14 @@ def init():
         'Joy',
         'Surprise',
         'Fear',
-        'Contempt']}}
+        'Contempt','Number of faces']}}
 
-    DATA_TO_EXTRACT[9] = {'GSR':{'SOURCE':'Shimmer','CATEGORY':'GSR','COLUMNS':['GSR Conductance CAL']}, # only one for GSR, passed for deconvolution
-                        'HEART':{'SOURCE':'Shimmer','CATEGORY':'Algorithm','COLUMNS':['Heart Rate PPG ALG']},
-                        'STIMULUS':{'SOURCE':'SlideEvents','CATEGORY':'Slideshow','COLUMNS':['SourceStimuliName']},
-                        'ANNOTATION': {'SOURCE':'','CATEGORY':'NONE','COLUMNS':['PostMarker','Annotation']}, # annotation is special: HAs no specific events, column can be one of the two (not both!)
-                        #'EYE':{'SOURCE':'','COLUMNS':['FixationX','FixationY','FixationSeq']},
-                        'FACE':{'SOURCE':'Affectiva AFFDEX','CATEGORY':'Affdex Emotion','COLUMNS':[
+    DATA_TO_EXTRACT[9] = {'GSR':{'SOURCE':'Shimmer','CATEGORY':'','COLUMNS':['GSR Conductance CAL']}, # only one for GSR, passed for deconvolution
+                        'HEART':{'SOURCE':'Shimmer','CATEGORY':'','COLUMNS':['Heart Rate PPG ALG']},
+                        'STIMULUS':{'SOURCE':'SlideEvents','CATEGORY':'Slideshow','COLUMNS':['SourceStimuliName','SlideEvent']},
+                        'ANNOTATION': {'SOURCE':'','CATEGORY':'','COLUMNS':['PostMarker','Annotation']}, # annotation is special: HAs no specific events, column can be one of the two (not both!)
+                        'EYE':{'SOURCE':'R Analysis GazeAnalysis I-VT filter','CATEGORY':'Fixations','COLUMNS':['Fixation X','Fixation Y','Fixation Index']},
+                        'FACE':{'SOURCE':'Affectiva AFFDEX','CATEGORY':'','COLUMNS':[
         #'Number of faces', # this is an integer as 0,1,2...
         'Valence', # between -100 and 100
         'Smile', # this and all remaining should be already between 0-100
@@ -111,4 +111,4 @@ def init():
         'Joy',
         'Surprise',
         'Fear',
-        'Contempt']}}
+        'Contempt','Number of faces']}}

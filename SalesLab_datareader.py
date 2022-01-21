@@ -11,7 +11,7 @@ import Saleslab_settings
 import csv
 
 # GLOBAL PARAMETERS #######################################
-INPUT_FILE = None # put here full path to file to make debugging faster (no clicking)
+INPUT_FILE=None
 PROFILE = False  # enable profiling, useful in debugging
 ###########################################################
 
@@ -19,6 +19,12 @@ pandas.set_option('display.max_rows', 500)
 pandas.set_option('display.max_columns', 500)
 pandas.set_option('display.width', 1000)
 
+# parse string to allow quoting to work
+def lineparser(linestr,delimiter):
+    X = list(csv.reader([linestr],delimiter = delimiter,doublequote = False,skipinitialspace = True,quoting = csv.QUOTE_MINIMAL))
+    return X[0]
+
+# deprecated, now only use ver 9
 def read_ver8_data(INPUT_FILE,delimiter,decimal):
     DEVICE_row = detect_header_rows(INPUT_FILE, separator=delimiter, identifier='#Device')
     CATEGORY_row = detect_header_rows(INPUT_FILE, separator=delimiter, identifier='#Category')
@@ -46,6 +52,7 @@ def read_ver8_data(INPUT_FILE,delimiter,decimal):
     table = pandas.read_csv(INPUT_FILE, sep=delimiter, header=0, skiprows=DATA_row-1,low_memory=False,encoding='utf-8',index_col=False,names=new_names,usecols=range(1,len(new_names)+1),decimal=decimal)
     return table
 
+# data reader, finds special lines and startpoint of actual data
 def read_ver9_data(INPUT_FILE,delimiter,decimal):
     DEVICE_row = detect_header_rows(INPUT_FILE, separator=delimiter, identifier='#Device')
     CATEGORY_row = detect_header_rows(INPUT_FILE, separator=delimiter, identifier='#Category')
@@ -58,7 +65,8 @@ def read_ver9_data(INPUT_FILE,delimiter,decimal):
         i=0
         while line:
             i+=1
-            s = line.strip().split(delimiter)
+            #s = line.strip().split(delimiter)
+            s = lineparser(line,delimiter)
             if i == DEVICE_row:
                 DEVICES = isvalid(s[1:])
             if i == CATEGORY_row:
@@ -67,10 +75,13 @@ def read_ver9_data(INPUT_FILE,delimiter,decimal):
                 COLUMNS = isvalid(s[1:])
                 break
             line = f.readline()
+    assert len(DEVICES)==len(CATEGORIES)==len(COLUMNS),"Different number of devices (%i), categories (%i) and columns (%i)!" % (len(DEVICES),len(CATEGORIES),len(COLUMNS))
     new_names = ['|'.join(x) for x in list(zip(DEVICES,CATEGORIES,COLUMNS))]
     #for old in ['Affdex Facial Expression','Affdex Emotion','GSR']:
     #    new_names = [x.replace(old,'Data') for x in new_names]
     table = pandas.read_csv(INPUT_FILE, sep=delimiter, header=0, skiprows=DATA_row-1,low_memory=False,encoding='utf-8',index_col=False,names=new_names,usecols=range(1,len(new_names)+1),decimal=decimal)
+    assert all([x in table.columns for x in new_names]),"Not all new names in data!"
+
     return table
 
 # helper function to get column names
@@ -105,7 +116,8 @@ def pandas_to_numpy(table):
                 d[col] = vals
         except ValueError as error:
             vals = np.array(table[col],dtype=str)
-            if np.count_nonzero(vals!="nan")>10:
+            vals[table[col].isna()]=''
+            if np.count_nonzero(vals!="")>0:
                 d[col] = vals
     return d
 
@@ -248,35 +260,48 @@ def plot_eye_data(t,fix_id,fix_x,fix_y,fname):
     #fig2 = draw_scanpath(fixations, saccades, DISPSIZE, imagefile=imagefile, alpha=0.5, savefilename=scanpathfile)
 
 # extract annotation events, results into a list of (starttime,endtime) blocks
-def get_annotation_events(t,y):
-    all_events = list(np.unique(y))
-    all_events = [x for x in all_events if x!='nan' and len(x)>2]
+def get_annotation_events(t,signals):
+    best_anno = get_best_annotator(signals)
     event_dict = {}
-    if len(all_events)>0 and len(all_events)<100:
-        for event in all_events:
-            event_dict[event]=[]
-            start = None
-            last = None
-            for i in range(len(t)):
-                if y[i] == event and i<len(t)-1:
-                    if start is None:
-                        start = i
-                    last=i
-                else:
-                    if start is not None and last is not None:
-                        event_dict[event].append((t[start],t[last]))
-                        start = None
-                        last = None
+    for key in signals.keys():
+        event_dict[key] = {'type':best_anno==key,'events':{}}
+        y=signals[key]
+        all_events = list(np.unique(y))
+        all_events = [x for x in all_events if x!='nan' and len(x)>2]
+        if len(all_events)>0 and len(all_events)<100:
+            for event in all_events:
+                event_dict[key]['events'][event]=[]
+                start = None
+                last = None
+                for i in range(len(t)):
+                    if y[i] == event and i<len(t)-1:
+                        if start is None:
+                            start = i
+                        last=i
+                    else:
+                        if start is not None and last is not None:
+                            event_dict[key]['events'][event].append((t[start],t[last]))
+                            start = None
+                            last = None
     return event_dict
 
 # add annotations as patches into given plot
-def add_annotations(ax,annotation_events,add_label=True):
+def add_annotations(ax,annotation_events1,add_label=True):
+    if len(annotation_events1)==0:
+        return
+
     import matplotlib.patches as patches
     x_lims = ax.get_xlim()
     y_lims = ax.get_ylim()
-    cols = ('b','g','r','c','m','y','#E9AF8E','#C78E49') # assume up to 6 event types for now...
+    cols = ('b','g','r','c','m','y','#E9AF8E','#C78E49','lime','tomato','olive','peru','gold','royalblue') #
     k=-1
 
+    annotation_events=None
+    for key in annotation_events1.keys():
+        if annotation_events1[key]['type']==1:
+            annotation_events=annotation_events1[key]['events']
+            break
+    # sort based on initial onset time
     mintimes = {}
     for event_name,events in annotation_events.items():
         mintimes[event_name]=np.inf
@@ -303,15 +328,25 @@ def add_annotations(ax,annotation_events,add_label=True):
 # write data as text file
 def write_data(file,data,annotation_events,media_offset):
     t = data['time']
-    t_anno = ['' for x in range(len(t))]
-    label_anno = set()
-    for i in range(len(t)):
-        for event_name,events in annotation_events.items():
-            for event in events:
-                if event[0]<=t[i]<=event[1]:
-                    t_anno[i] = event_name
-                    label_anno.add(event_name)
-                    break
+    annot_timeseries = {}
+    for key in annotation_events.keys():
+        t_anno = ['' for x in range(len(t))]
+        #label_anno = set()
+        for i in range(len(t)):
+            for event_name,events in annotation_events[key]['events'].items():
+                for event in events:
+                    if (event[0] <= t[i] <= event[1]):
+                        t_anno[i] = event_name
+                        break
+                    elif (i>0):
+                        if (t[i-1]<= event[0] <= t[i]):
+                            t_anno[i] = event_name
+                            break
+                        if (t[i-1]<= event[1] <= t[i]):
+                            t_anno[i-1] = event_name
+                            break
+
+        annot_timeseries[key] = t_anno
     cols = [x for x in data['responses'].keys() if len(data['responses'][x])==len(t)] # only with same number of timepoints
     with open(file,'w',encoding="utf-8") as f:
         if media_offset == None:
@@ -320,16 +355,16 @@ def write_data(file,data,annotation_events,media_offset):
             f.write("mediatime[sec]\t")
         for c in cols:
             f.write("%s\t" % c)
-            #print("%s\t" % c,end="")
-        f.write("annotation[%i]\n" % len(label_anno))
-        #print("{}\n".format("annotation"),end="")
+        for key in annot_timeseries.keys():
+            f.write("%s\t" % key)
+        f.write("\n")
         for i in range(len(t)):
             f.write("{}\t".format(t[i]))
             for c in cols:
                 f.write("{}\t".format(data['responses'][c][i]))
-                #print("{}\t".format(data['responses'][c][i]),end='')
-            f.write("{}\n".format(t_anno[i]))
-            #print("{}\n".format(t_anno[i]),end='')
+            for key,x in annot_timeseries.items():
+                f.write("{}\t".format(x[i]))
+            f.write("\n")
 
 # print progress information to console and GUI (if present)
 def myprint(txt,end='\n',file=None):
@@ -385,6 +420,7 @@ def clean_annotations(responses):
             responses[r][i] = responses[r][i][0:ind]
     return responses
 
+# try to detect iMotions version
 def detect_version(infile):
     with open(infile,'r',encoding="utf-8") as f:
         for line in f:
@@ -395,6 +431,7 @@ def detect_version(infile):
                     return int(s[0])
     return None
 
+# try to detect column separator and decimal delimiter
 def detect_delimiters(file_path, bytes = 4096):
     sniffer = csv.Sniffer()
     data = open(file_path, "r").read(bytes)
@@ -407,6 +444,20 @@ def detect_delimiters(file_path, bytes = 4096):
         if n_dot<n_comma:
             separator=','
     return delimiter,separator
+
+# find annotator that has most non-zero elements, we'll use that in plotting
+def get_best_annotator(signals):
+    best_n=-1
+    best=None
+    for key in signals.keys():
+        try:
+            n = np.sum(~np.isnan(signals[key]))
+        except:
+            n = np.sum(signals[key]!='')
+        if n>best_n:
+            best=key
+            best_n=n
+    return best
 
 # function to process single file
 def process_file(DATA_TO_EXTRACT_base):
@@ -455,7 +506,7 @@ def process_file(DATA_TO_EXTRACT_base):
                 myprint('No "EventSource" column found, not a valid dataset! Exiting...', file=report_file)
                 assert False
         elif version==8:
-            table = read_ver8_data(INPUT_FILE,separator,decimal)
+            table = read_ver9_data(INPUT_FILE,separator,decimal)
         elif version==9:
             table = read_ver9_data(INPUT_FILE,separator,decimal)
         else:
@@ -509,26 +560,24 @@ def process_file(DATA_TO_EXTRACT_base):
                         DATA_TO_EXTRACT_new[key].append({'SOURCE':source,'COLUMNS':DATA_TO_EXTRACT[key]['COLUMNS']})
             else: # no specified sources, pass as is
                 DATA_TO_EXTRACT_new[key]=[{'SOURCE': '', 'COLUMNS': DATA_TO_EXTRACT[key]['COLUMNS']}]
-    if version==8:
+    if version>7:
         all_EVENTS = table.columns
         DATA_TO_EXTRACT_new = {}
         for key, value in DATA_TO_EXTRACT.items():
-            arr = [(event.split('|'))[0] for i, event in enumerate(all_EVENTS) if value['SOURCE'] in event.lower()]
-            exact_sources = np.unique(arr)
-            if len(exact_sources) > 0:
-                DATA_TO_EXTRACT_new[key] = []  # collect all into a list
-                for source in exact_sources:
-                    DATA_TO_EXTRACT_new[key].append({'SOURCE': source, 'COLUMNS': [source+'|Data|'+x for x in DATA_TO_EXTRACT[key]['COLUMNS']]})
-    if version==9:
-        all_EVENTS = table.columns
-        DATA_TO_EXTRACT_new = {}
-        for key, value in DATA_TO_EXTRACT.items():
-            arr = [(event.split('|'))[0] for i, event in enumerate(all_EVENTS) if (value['SOURCE'] in event and value['CATEGORY'] in event)]
-            exact_sources = np.unique(arr)
-            if len(exact_sources) > 0:
-                DATA_TO_EXTRACT_new[key] = []  # collect all into a list
-                for source in exact_sources:
-                    DATA_TO_EXTRACT_new[key].append({'SOURCE': source, 'COLUMNS': [(source+'|'+value['CATEGORY']+'|'+x) for x in DATA_TO_EXTRACT[key]['COLUMNS']]})
+            arr = [event for event in all_EVENTS if
+                   (value['SOURCE'] in event.split('|')[0] and
+                    value['CATEGORY'] in event.split('|')[1] and
+                    any([x in event.split('|')[2] for x in value['COLUMNS']]))
+                   ]
+            exact_sources = list(np.unique(arr))
+            unique_sources = list(np.unique([x.split('|')[0] for x in exact_sources]))
+            DATA_TO_EXTRACT_new[key] = []
+            for unique_source in unique_sources:
+                d = []
+                for exact_source in exact_sources:
+                    if unique_source in exact_source:
+                        d.append(exact_source)
+                DATA_TO_EXTRACT_new[key].append(d)
 
     # this is the dict of those sources found in our table as recognized by pre-defined patterns
     DATA_TO_EXTRACT = copy.deepcopy(DATA_TO_EXTRACT_new) # create a new local copy
@@ -542,38 +591,43 @@ def process_file(DATA_TO_EXTRACT_base):
         pr.enable()
 
     # phase 1: collect all relevant data as numpy arrays
+    # idea is that for each source type, we have single time-column and array of responses. Responses need to be in single table as they could be connected (e.g., X and Y coordinates of EYE).
     DATA = {}
     n_sources = 0
-    myprint('Finding sources',file=report_file)
-    for key,source_list in DATA_TO_EXTRACT.items():
+    myprint('Finding sources', file=report_file)
+    for key, source_list in DATA_TO_EXTRACT.items():
         sub_sources = len(source_list)
-        DATA[key]=[]
+        DATA[key] = []
         for value in source_list:
-            cols = value['COLUMNS']
-            event_rows = list(np.where(~(table[cols[0]].isna()))[0])
-            if len(event_rows)<10:
+            cols = value if isinstance(value,list) else [value]
+            event_rows = list(np.where((~table[cols].isna()).sum(axis=1)>0)[0]) # get indices with at least one value
+            if len(event_rows) < 1:
                 myprint('less than 10 events, skipping this source')
                 continue
             cols.append(timestamp_column)
-            if len(cols)>1: # must have at least two columns (always has TimeStamp)
+            if len(cols) > 1:  # must have at least two columns (always has TimeStamp)
                 partial_table = table.iloc[event_rows]
-                partial_table=partial_table[cols]
+                partial_table = partial_table[cols]
                 # convert into dict of dense numpy arrays
-                responses = pandas_to_numpy(partial_table.loc[:,partial_table.columns != timestamp_column])
-                if key=="ANNOTATION":
-                    if len(responses)>1:
-                        myprint("!! Multiple non-empty annotations columns found, cannot include annotations. Check your data !!")
+                responses = pandas_to_numpy(partial_table.loc[:, partial_table.columns != timestamp_column])
+                if key == "ANNOTATION":
+                    if len(responses) > 1:
+                        myprint(
+                            "!! Multiple non-empty annotations columns found, cannot include annotations. Check your data !!")
                         continue
-                    if len(responses)==1: # this is expected result
-                        responses = clean_annotations(responses) # remove overlapping annotations
+                    if len(responses) == 1:  # this is expected result
+                        responses = clean_annotations(responses)  # remove overlapping annotations
                 # test if all data are nans, omit if yes
                 if not is_full_nan(responses):
-                    d = {'time':np.array(partial_table[timestamp_column],dtype=np.float32),'responses':responses}
+                    d = {'time': np.array(partial_table[timestamp_column], dtype=np.float32), 'responses': responses}
                     DATA[key].append(d)
-                    myprint('...found source %s (%s=#%i), raw data extracted (%i points)' % (key,value['SOURCE'],len(DATA[key]),len(DATA[key][-1]['time'])),file=report_file)
-                    n_sources+=1
+                    myprint('...found source %s (%i signals), raw data extracted (%i points)' % (
+                    key,len(cols)-1,d['time'].shape[0]), file=report_file)
+                    n_sources += 1
 
     assert n_sources>0,'!!! Could not find ANY valid data sources for this file, check your file !!!'
+
+    DATA = {k:v for k,v in DATA.items() if len(v)>0}
 
     # get offset timepoint and set it to zero
     offset=None
@@ -598,11 +652,11 @@ def process_file(DATA_TO_EXTRACT_base):
     # Phase 2: shift offset, remove all redundant timepoints via median
     myprint('Extracting events',file=report_file)
     for i,key in enumerate(DATA.keys()):
-        for key_set in range(len(DATA[key])):
-            myprint('...extracting events for %s (#%i)..' % (key,key_set+1),end='',file=report_file)
-            DATA[key][key_set]['time'] -= offset
-            DATA[key][key_set]['time'] = DATA[key][key_set]['time']/1000.0
-            t = DATA[key][key_set]['time']
+        for signal in DATA[key]:
+            myprint('...extracting events for %s (%i signals)..' % (key,len(signal['responses'])),end='',file=report_file)
+            signal['time'] -= offset
+            signal['time'] = signal['time']/1000.0
+            t = signal['time']
             inds = {}
             k=0
             val=0
@@ -619,11 +673,11 @@ def process_file(DATA_TO_EXTRACT_base):
                 new_time = np.append(new_time,t[k])
                 k = kk
                 val += 1
-            DATA[key][key_set]['time'] = new_time
-            assert monotonic(DATA[key][key_set]['time']),"Time array is not monotonic!"
+            signal['time'] = new_time
+            assert monotonic(signal['time']),"Time array is not monotonic!"
 
             # get data for bins, take MEDIAN if more than one
-            for response,y in DATA[key][key_set]['responses'].items():
+            for response,y in signal['responses'].items():
                 if np.isreal(y[0]):
                     # real type data
                     new_y = np.zeros(val,dtype=np.float32)
@@ -637,8 +691,9 @@ def process_file(DATA_TO_EXTRACT_base):
                     new_y = np.zeros(val,dtype=object)
                     for i in range(len(inds)):
                         new_y[i] = y[inds[i][0]] # we just take the first
-                DATA[key][key_set]['responses'][response]=new_y
-            myprint(' %i samples' % len(DATA[key][key_set]['time']),file=report_file)
+                assert len(new_time)==len(new_y),"refined timeseries different length! (BUG)"
+                signal['responses'][response]=new_y
+            myprint(' %i samples' % len(signal['time']),file=report_file)
 
     # Phase 3: Process refined data and make preview plots
 
@@ -654,36 +709,33 @@ def process_file(DATA_TO_EXTRACT_base):
 
     # iterate over data sources, add ANNOTATION if available
     for key in allkeys:
-        for key_set in range(len(DATA[key])):
-
+        for key_set,signals in enumerate(DATA[key]):
             myprint('Analyzing data for %s (#%i)' % (key,key_set+1),file=report_file)
-
             if key == 'ANNOTATION':
-                r = list(DATA[key][key_set]['responses'].keys())[0]  # get whatever response name
-                t = DATA[key][key_set]['time']
-                y = DATA[key][key_set]['responses'][r]
-                annotation_events = get_annotation_events(t, y)
-                DATA[key][key_set]['annotation_events'] = annotation_events
-                myprint('...total %i unique annotation blocks:\n    %s' % (len(annotation_events), "\n    ".join(annotation_events)),file=report_file)
+                #r = get_best_annotator(signals['responses'])  # response with most data
+                t = signals['time']
+                #y = signals['responses'][r]
+                annotation_events = get_annotation_events(t,signals['responses'])
+                signals['annotation_events'] = annotation_events
+                myprint('...total %i annotations' % (len(annotation_events)),file=report_file)
 
             if key == 'STIMULUS':
-                r = list(DATA[key][key_set]['responses'].keys())[0]  # get whatever response name
-                t = DATA[key][key_set]['time']
-                y = DATA[key][key_set]['responses'][r]
-                annotation_events = get_annotation_events(t, y)
-                DATA[key][key_set]['annotation_events'] = annotation_events
-                myprint('...total %i unique stimulus blocks:\n    %s' % (len(annotation_events), "\n    ".join(annotation_events)),file=report_file)
+                #r = get_best_annotator(signals['responses'])  # response with most data
+                t = signals['time']
+                #y = signals['responses'][r]
+                annotation_events = get_annotation_events(t, signals['responses'])
+                signals['annotation_events'] = annotation_events
+                myprint('...total %i annotations' % (len(annotation_events)),file=report_file)
 
             if key == 'GSR':
                 # compute phasic (fast) part of signal
-                assert len(DATA[key][key_set]['responses']) == 1, "GSR should only contain single response (micro-Siemens), found %i" % len(
-                    DATA[key][key_set]['responses'])
-                r = list(DATA[key][key_set]['responses'].keys())[0]  # get whatever response name
+                assert len(signals['responses']) == 1, "GSR should only contain single response (micro-Siemens), found %i" % len(
+                    signals['responses'])
+                r = list(signals['responses'].keys())[0]  # get whatever response name
                 myprint('...computing phasic signal from raw GSR',file=report_file)
 
-                #DATA[key][key_set]['responses'][r] = DATA[key][key_set]['responses'][r]
-                new_time, new_y, phasic,tonic,hp_filtered = process_gsr_signal(DATA[key][key_set]['time'],
-                                                             DATA[key][key_set]['responses'][r])
+                #signals['responses'][r] = signals['responses'][r]
+                new_time, new_y, phasic,tonic,hp_filtered = process_gsr_signal(signals['time'],signals['responses'][r])
 
                 # set bad points into NaN
                 phasic[np.logical_or(phasic>new_y,phasic<0)]=np.nan # phasic cannot be larger than raw data or negative
@@ -691,25 +743,25 @@ def process_file(DATA_TO_EXTRACT_base):
                 myprint('...GSR data coverage %.1f%%' % (
                         100 * np.sum(~np.isnan(phasic)) / len(phasic)),file=report_file)
 
-                DATA[key][key_set]['time ORIGINAL'] = DATA[key][key_set]['time']
-                DATA[key][key_set]['time'] = new_time
-                DATA[key][key_set]['responses'][r + ' ORIGINAL'] = DATA[key][key_set]['responses'][r]
+                signals['time ORIGINAL'] = signals['time']
+                signals['time'] = new_time
+                signals['responses'][r + ' ORIGINAL'] = signals['responses'][r]
 
                 # force into positive values, again
-                DATA[key][key_set]['responses'][r] = new_y
-                DATA[key][key_set]['responses']['phasic'] = phasic
-                DATA[key][key_set]['responses']['tonic'] = tonic #new_y - phasic
+                signals['responses'][r] = new_y
+                signals['responses']['phasic'] = phasic
+                signals['responses']['tonic'] = tonic #new_y - phasic
 
-                #DATA[key][key_set]['responses']['hp_filtered'] = hp_filtered
+                #signals['responses']['hp_filtered'] = hp_filtered
 
                 # make plot
-                gsrfile = RESULT_FOLDER + file_name[:-4] + "_source%i_phasic_gsr" % (key_set+1)
+                gsrfile = RESULT_FOLDER + file_name[:-4] + "_source%i_GSR" % (key_set+1)
                 plt.close('all')
                 plt.figure(figsize=[9,5],dpi=200)
-                plt.plot(DATA[key][key_set]['time ORIGINAL'], DATA[key][key_set]['responses'][r + ' ORIGINAL'],'.',markersize=1)
-                plt.plot(DATA[key][key_set]['time'], DATA[key][key_set]['responses']['phasic'],'.',markersize=1)
-                plt.plot(DATA[key][key_set]['time'], DATA[key][key_set]['responses']['tonic'],'.',markersize=1)
-                #plt.plot(DATA[key][key_set]['time'], DATA[key][key_set]['responses']['hp_filtered'],linewidth=1)
+                plt.plot(signals['time ORIGINAL'], signals['responses'][r + ' ORIGINAL'],'.',markersize=1)
+                plt.plot(signals['time'], signals['responses']['phasic'],'.',markersize=1)
+                plt.plot(signals['time'], signals['responses']['tonic'],'.',markersize=1)
+                #plt.plot(signals['time'], signals['responses']['hp_filtered'],linewidth=1)
                 plt.xlabel('Time [sec]')
                 plt.ylabel('micro-Siemens')
                 lgnd = plt.legend(['RAW', 'phasic', 'tonic'],loc=(1.02,0.50))# loc='center left')
@@ -725,10 +777,10 @@ def process_file(DATA_TO_EXTRACT_base):
                 plt.savefig(gsrfile+'.png',bbox_inches="tight")
                 plt.savefig(gsrfile+'.pdf',bbox_inches="tight")
                 # write data as text
-                write_data(RESULT_FOLDER + file_name[:-4] + "_source%i_phasic_gsr.txt" % (key_set+1), DATA[key][key_set], annotation_events,media_offset)
+                write_data(RESULT_FOLDER + file_name[:-4] + "_source%i_GSR.csv" % (key_set+1), signals, annotation_events,media_offset)
 
             if key == 'FACE':
-                facefile = RESULT_FOLDER + file_name[:-4] + "_source%i_affdex_facial" % (key_set+1)
+                facefile = RESULT_FOLDER + file_name[:-4] + "_source%i_FACE" % (key_set+1)
 
                 # make plot
                 plt.close('all')
@@ -736,17 +788,17 @@ def process_file(DATA_TO_EXTRACT_base):
                 DPI = float(fig.get_dpi())
                 coverage = np.nan
                 try:
-                    coverage = 100 * np.sum(DATA[key][key_set]['responses']['Number of faces'] > 0) / len(DATA[key][key_set]['responses']['Number of faces'])
+                    coverage = 100 * np.sum(signals['responses']['Number of faces'] > 0) / len(signals['responses']['Number of faces'])
                 except:
                     pass
                 myprint('...Affdex data coverage %.1f%%' % (coverage),file=report_file)
                 fig.set_size_inches(700.0 / DPI, 1080.0 / DPI)
-                for i, resp_key in enumerate(DATA[key][key_set]['responses'].keys()):
-                    ax = plt.subplot(len(DATA[key][key_set]['responses']), 1, i + 1)
-                    t = DATA[key][key_set]['time']
-                    y = DATA[key][key_set]['responses'][resp_key]
+                for i, resp_key in enumerate(signals['responses'].keys()):
+                    ax = plt.subplot(len(signals['responses']), 1, i + 1)
+                    t = signals['time']
+                    y = signals['responses'][resp_key]
                     plt.plot(t, y)
-                    plt.ylabel(resp_key, rotation=0, horizontalalignment='right')
+                    plt.ylabel(resp_key.split('|')[-1], rotation=0, horizontalalignment='right')
                     plt.xlim((t[0] - 1, t[-1] + 1))  # over timerange
                     if 'Number of' not in resp_key:
                         if "valence" in resp_key.lower():
@@ -760,7 +812,7 @@ def process_file(DATA_TO_EXTRACT_base):
                             plt.ylim((-1, 101))  # results come scaled between 0-100
                             assert np.nanmin(y) > -0.01 and np.nanmax(
                                 y) < 100.01, "AFFDEX data for %s not between [0,100]!!!" % resp_key
-                    if i + 1 < len(DATA[key][key_set]['responses']):
+                    if i + 1 < len(signals['responses']):
                         ax.set_xticklabels([])
                         add_annotations(plt.gca(), annotation_events, add_label=False)
                     else:
@@ -773,19 +825,19 @@ def process_file(DATA_TO_EXTRACT_base):
                 plt.savefig(facefile+'.png',bbox_inches="tight")
                 plt.savefig(facefile+'.pdf', bbox_inches="tight")
                 # write data as text
-                write_data(RESULT_FOLDER + file_name[:-4] + "_source%i_affdex_facial.txt" % (key_set+1), DATA[key][key_set], annotation_events,media_offset)
+                write_data(RESULT_FOLDER + file_name[:-4] + "_source%i_FACE.csv" % (key_set+1), signals, annotation_events,media_offset)
 
             if key == 'HEART':
-                heartfile = RESULT_FOLDER + file_name[:-4] + "_source%i_heart_rate" % (key_set+1)
-                t = DATA[key][key_set]['time']
-                r = list(DATA[key][key_set]['responses'].keys())[0]  # get whatever response name
-                y = DATA[key][key_set]['responses'][r]
+                heartfile = RESULT_FOLDER + file_name[:-4] + "_source%i_HEART" % (key_set+1)
+                t = signals['time']
+                r = list(signals['responses'].keys())[0]  # get whatever response name
+                y = signals['responses'][r]
                 y[np.logical_or(y < 30, y > 230)] = np.nan  # assume valid pulse ranges
 
                 # make plot
                 plt.close('all')
                 plt.figure(figsize=[9, 5], dpi=200)
-                plt.plot(t, y,'.',markersize=3)
+                plt.plot(t, y,'-') #,markersize=3)
                 plt.xlim((t[0] - 1, t[-1] + 1))  # over timerange
                 plt.xlabel('Time [sec]')
                 plt.ylabel('Heart rate [beats/min]')
@@ -797,21 +849,24 @@ def process_file(DATA_TO_EXTRACT_base):
                 plt.savefig(heartfile+'.pdf', bbox_inches="tight")
                 myprint('...heartrate data coverage %.1f%% (median %.1f)' % (
                 (100 * np.sum(np.isnan(y) == 0) / len(y), np.nanmedian(y))),file=report_file)
-                write_data(RESULT_FOLDER + file_name[:-4] + "_source%i_heart_rate.txt" % (key_set+1), DATA[key][key_set],annotation_events,media_offset)
+                write_data(RESULT_FOLDER + file_name[:-4] + "_source%i_HEART.csv" % (key_set+1), signals,annotation_events,media_offset)
 
             if key == 'EYE':
-                x_pos = DATA[key][key_set]['responses']['FixationX']
-                y_pos = DATA[key][key_set]['responses']['FixationY']
-                fix_id = DATA[key][key_set]['responses']['FixationSeq']
+                xkey = [x for x in signals['responses'].keys() if 'X' in x][0]
+                ykey = [x for x in signals['responses'].keys() if 'Y' in x][0]
+                x_pos = signals['responses'][xkey]
+                y_pos = signals['responses'][ykey]
+                z = [x for x in signals['responses'].keys() if x not in [xkey,ykey]][0]
+                fix_id = signals['responses'][z]
                 mean_fixation = (np.nanmedian(x_pos), np.nanmedian(y_pos))
                 myprint('...fixation coverage %.1f%% with median location x=%i and y=%i' % (
                 100 * np.sum(np.isnan(fix_id) == 0) / len(fix_id), mean_fixation[0], mean_fixation[1]),file=report_file)
                 # make plot
                 plt.close('all')
-                plot_eye_data(DATA[key][key_set]['time'], fix_id, x_pos, y_pos,RESULT_FOLDER + file_name[:-4] + "_source%i" % (key_set+1))
-                write_data(RESULT_FOLDER + file_name[:-4] + "_source%i_eye_fixations.txt" % (key_set+1), DATA[key][key_set], annotation_events,media_offset)
+                plot_eye_data(signals['time'], fix_id, x_pos, y_pos,RESULT_FOLDER + file_name[:-4] + "_source%i" % (key_set+1))
+                write_data(RESULT_FOLDER + file_name[:-4] + "_source%i_EYE.csv" % (key_set+1), signals, annotation_events,media_offset)
 
-    myprint('All done! Result files written to path:\n  "%s"' % RESULT_FOLDER,file=report_file)
+    myprint('\nAll done! Result files written to path:\n  "%s"' % RESULT_FOLDER,file=report_file)
 
     report_file.close()
 
@@ -823,7 +878,7 @@ def process_file(DATA_TO_EXTRACT_base):
 if __name__ == "__main__":
     __spec__ = "ModuleSpec(name='builtins', loader=<class '_frozen_importlib.BuiltinImporter'>)"
 
-    Saleslab_settings.init()
+    Saleslab_settings.init() # read predefined params
     Saleslab_settings.process_file=lambda:process_file(Saleslab_settings.DATA_TO_EXTRACT)
     Saleslab_settings.myprint=myprint
     hasGUI = 0
