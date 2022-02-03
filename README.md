@@ -1,28 +1,21 @@
-# SalesLab_toolbox
+## SalesLab_toolbox
 
 Collection of codes to process and analyze iMotions datasets.
 
 Main function is "SalesLab_datareader.py" which reads and processes raw iMotions export datafiles (containing all datasources). It will create preview images and separated datafiles for each modality in the data.
 
-Requirements:
+## Requirements:
 
--Python 3.7+
+- Python 3.7+
+- Numpy
+- Pandas
+- Scipy
+- Ledapy 1.2+
+- wxPython (only if using GUI option)
 
--Numpy
+## Installation:
 
--Pandas
-
--Scipy
-
--Ledapy 1.2+
-
--wxPython (only if using GUI option)
-
-
-Installation:
-
-Probably easiest to install the latest Miniconda (docs.conda.io/en/latest/miniconda.html) and requires modules by hand (i.e., pip install XXX). Then unpack the codes into some folder and run the code (see the following).
-
+Probably easiest to install Anaconda (https://www.anaconda.com/) or Miniconda (docs.conda.io/en/latest/miniconda.html) and required modules by hand (i.e., pip install XXX). Then unpack the codes into some folder and run the code (see the following).
 
 There are two ways to use SalesLab_ratareader.py:
 
@@ -49,4 +42,4 @@ There is sample data "raw_exported_data_sample.txt" that you can test.
 
 
 Janne Kauttonen
-3.10.2019
+3.10.2019 (updated Feb 2022)
