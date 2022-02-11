@@ -5,7 +5,6 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as tck
 import copy
 import os
-import Saleslab_GUI
 from scipy import signal
 import Saleslab_settings
 import csv
@@ -474,6 +473,9 @@ def process_file(DATA_TO_EXTRACT_base):
     INPUT_FILE_ROOT,file_name = os.path.split(INPUT_FILE)
     INPUT_FILE_ROOT += os.sep
 
+    if INPUT_FILE_ROOT[0] == os.sep:
+        INPUT_FILE_ROOT = INPUT_FILE_ROOT[1:]
+
     RESULT_FOLDER = INPUT_FILE_ROOT
     if Saleslab_settings.USE_SUBFOLDER: # collect results into new subfolders (recommended)
         RESULT_FOLDER = INPUT_FILE_ROOT + file_name[:-4] + "_datareader_output" + os.sep
@@ -890,6 +892,7 @@ if __name__ == "__main__":
 
     if INPUT_FILE is None:
         # no files, start GUI
+        import Saleslab_GUI
         print('No input files given as arguments, starting GUI...\n')
         hasGUI=1
         Saleslab_GUI.start_GUI("Saleslab datareader")

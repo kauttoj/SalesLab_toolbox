@@ -1,5 +1,5 @@
 wxPython>=4.0.6
-ledapy>=1.2
+-e git+https://github.com/kauttoj/Ledapy.git@master
 pandas>=0.24.2
 numpy>=1.16.4
 matplotlib>=3.0.3
